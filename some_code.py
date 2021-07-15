@@ -9,6 +9,7 @@ import time
 WIDTH = 800
 HEIGHT = 600
 FPS = 50
+POWERUP_TIME=5000
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -64,14 +65,22 @@ class Ship(pygame.sprite.Sprite):
         self.rect.centerx=WIDTH
         self.rect.bottom=HEIGHT-10
         self.speedx=0
-        self.sheild=100
+        self.shield=100
         self.shoot_del=250
         self.last_shoot=pygame.time.get_ticks()
         self.lives=3
         self.hidden=False
         self.hide_timer = pygame.time.get_ticks()
+        self.power=1
+        self.power_time=pygame.time.get_ticks()
+    def powerup(self):
+        self.power += 1
+        self.power_time = pygame.time.get_ticks()
 
     def update(self):
+        if self.power >= 2 and pygame.time.get_ticks() - self.power_time > POWERUP_TIME:
+            self.power -= 1
+            self.power_time = pygame.time.get_ticks()
         if self.hidden and pygame.time.get_ticks() - self.hide_timer > 2000:
             self.hidden = False
             self.rect.centerx = WIDTH / 2
@@ -93,10 +102,19 @@ class Ship(pygame.sprite.Sprite):
         now = pygame.time.get_ticks()
         if now - self.last_shoot > self.shoot_del:
             self.last_shoot = now
-            bullet = Bullet(self.rect.centerx, self.rect.top)
-            all_sprites.add(bullet)
-            bullets.add(bullet)
-            shoot_sound.play()
+            if self.power==1:
+                bullet = Bullet(self.rect.centerx, self.rect.top)
+                all_sprites.add(bullet)
+                bullets.add(bullet)
+                shoot_sound.play()
+            if self.power>=2:
+                bullet1 = Bullet(self.rect.right, self.rect.centery)
+                bullet2 = Bullet(self.rect.left, self.rect.centery)
+                all_sprites.add(bullet2)
+                bullets.add(bullet1)
+                all_sprites.add(bullet1)
+                bullets.add(bullet2)
+                shoot_sound.play()
     def hide(self):
         self.hidden = True
         self.hide_timer = pygame.time.get_ticks()
@@ -153,14 +171,14 @@ class Bullet(pygame.sprite.Sprite):
         if self.rect.bottom < 0:
             self.kill()
 class Pow(pygame.sprite.Sprite):
-    def __init__(self, x, y):
+    def __init__(self,center):
         pygame.sprite.Sprite.__init__(self)
         self.type = random.choice(['shield', 'gun'])
         self.image = powerup_images[self.type]
         self.image.set_colorkey(BLACK)
         self.rect = self.image.get_rect()
         self.rect.center=center
-        self.speedy = 2
+        self.speedy = 3+1/2
 
     def update(self):
         self.rect.y += self.speedy
@@ -189,7 +207,6 @@ class Explosion(pygame.sprite.Sprite):
                 self.image = explosion_anim[self.size][self.frame]
                 self.rect = self.image.get_rect()
                 self.rect.center = center
-
 
 background=pygame.image.load(path.join(img_dir,"starfield.png")).convert()
 background_rect=background.get_rect()
@@ -225,9 +242,11 @@ expl_sounds=[]
 for snd in ['expl3.wav', 'expl6.wav']:
     expl_sounds.append(pygame.mixer.Sound(path.join(snd_dir, snd)))
 shoot_sound=pygame.mixer.Sound(path.join(snd_dir,"pew.wav"))
+sheild_sound=pygame.mixer.Sound(path.join(snd_dir,"pow4.wav"))
+power_sound=pygame.mixer.Sound(path.join(snd_dir,"pow5.wav"))
 player_die_sound = pygame.mixer.Sound(path.join(snd_dir, 'rumble1.ogg'))
 pygame.mixer.music.load(path.join(snd_dir,"tgfcoder-FrozenJam-SeamlessLoop.ogg"))
-pygame.mixer.music.set_volume(0.01)
+pygame.mixer.music.set_volume(0.15)
 
 all_sprites = pygame.sprite.Group()
 mobs = pygame.sprite.Group()
@@ -243,8 +262,23 @@ score=0
 pygame.mixer.music.play(loops=-1)
     
 running=True
+waiting=True
+run=True
+while waiting:
+    clock.tick(FPS)
+    draw_text(screen,"Press a key to begin",18,WIDTH/2,HEIGHT/2)
+    while run:
+        pygame.display.update()
+        time.sleep(1)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+            if event.type==pygame.KEYUP:
+                run=False
+                waiting=False
 while running:
     clock.tick(FPS)
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running=False
@@ -267,24 +301,34 @@ while running:
         running=False
     hits = pygame.sprite.spritecollide(ship, mobs, True,pygame.sprite.collide_circle)
     for hit in hits:
-        ship.sheild-=hit.radius*2
+        ship.shield-=hit.radius*2
         expl = Explosion(hit.rect.center, 'sm')
         all_sprites.add(expl)
-        if ship.sheild<=0:
+        if ship.shield<=0:
             player_die_sound.play()
             death_explosion = Explosion(ship.rect.center, 'player')
             all_sprites.add(death_explosion)
             ship.hide()
             ship.lives-=1
             if ship.lives !=0:
-                ship.sheild=100
-
+                ship.shield=100
+    hits = pygame.sprite.spritecollide(ship, powerups, True)
+    for hit in hits:
+        if hit.type == 'shield':
+            ship.shield += random.randrange(10, 30)
+            sheild_sound.play()
+            if ship.shield >= 100:
+                ship.shield = 100
+        if hit.type == 'gun':
+            ship.powerup()
+            power_sound.play()
+        
     if ship.lives==0 and not death_explosion.alive():
         draw_text(screen,"You Lose",20,450,300)
         running = False
     screen.blit(background, background_rect)
     all_sprites.draw(screen)
-    draw_shield(screen,5,5,ship.sheild)
+    draw_shield(screen,5,5,ship.shield)
     draw_lives(screen,WIDTH-100,5,ship.lives,ship_mini_img)
     pygame.display.flip()       
 draw_text(screen,"Your score was",20,450,300)
